@@ -1,0 +1,2 @@
+# Read-only package energy access for explicitly enrolled users. Never grant writes.
+ACTION=="add|change", SUBSYSTEM=="powercap", ATTR{name}=="package-0", TEST=="energy_uj", RUN+="/usr/bin/chgrp ak620 %S%p/energy_uj", RUN+="/usr/bin/chmod 0440 %S%p/energy_uj"

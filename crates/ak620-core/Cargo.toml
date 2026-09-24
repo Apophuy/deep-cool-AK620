@@ -1,0 +1,11 @@
+[package]
+name = "ak620-core"
+description = "Pure protocol and domain types for the AK620 DIGITAL PRO display"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+

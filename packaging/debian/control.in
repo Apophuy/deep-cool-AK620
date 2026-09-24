@@ -1,0 +1,11 @@
+Package: ak620-linux
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCHITECTURE@
+Maintainer: AK620 Linux contributors <noreply@example.invalid>
+Depends: libc6 (>= 2.36), libgcc-s1, libwayland-client0, libxkbcommon0, libegl1, libgl1, passwd, dbus, acl
+Recommends: systemd, udev
+Description: Linux display support for DeepCool AK620 DIGITAL PRO
+ Unprivileged USB HID display daemon and KDE-compatible settings/tray client
+ for the DeepCool AK620 DIGITAL PRO. ARGB control is intentionally excluded.

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AK620 DIGITAL PRO
+Name[ru]=AK620 DIGITAL PRO
+Comment=Start the AK620 DIGITAL PRO tray controller
+Comment[ru]=Запустить контроллер AK620 DIGITAL PRO в системном трее
+Exec=ak620-control --tray
+Icon=io.github.ak620linux.Control
+Terminal=false
+OnlyShowIn=KDE;
+X-KDE-autostart-after=panel

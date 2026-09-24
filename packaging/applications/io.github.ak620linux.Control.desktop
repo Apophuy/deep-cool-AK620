@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AK620 DIGITAL PRO
+Name[ru]=AK620 DIGITAL PRO
+Comment=Monitor and configure the AK620 DIGITAL PRO display
+Comment[ru]=Мониторинг и настройка дисплея AK620 DIGITAL PRO
+Exec=ak620-control
+Icon=io.github.ak620linux.Control
+Terminal=false
+Categories=Settings;HardwareSettings;System;
+StartupNotify=true

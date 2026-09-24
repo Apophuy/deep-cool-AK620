@@ -1,0 +1,24 @@
+[package]
+name = "ak620d"
+description = "Background Linux service for the AK620 DIGITAL PRO display"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+default-run = "ak620d"
+
+[dependencies]
+ak620-core = { path = "../ak620-core" }
+hidapi = { version = "2.6.7", default-features = false, features = ["linux-native-basic-udev"] }
+serde = { version = "1.0.228", features = ["derive"] }
+signal-hook = "0.3.18"
+toml = "=0.8.23"
+tokio = { version = "=1.53.1", features = ["macros", "net", "rt", "sync"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+zbus = "=5.11.0"
+# zbus 5.11 accepts newer 5.x macros, but 5.19-generated code requires newer zbus internals.
+zbus_macros = "=5.11.0"
+
+[lints]
+workspace = true

@@ -1,0 +1,2 @@
+# Preserve both the active-seat ACL and the system daemon's group ACL for this exact AK620 HID node.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3633", ATTRS{idProduct}=="0012", TAG+="uaccess", RUN+="/usr/bin/chgrp ak620 /dev/%k", RUN+="/usr/bin/setfacl -m g::rw,m::rw /dev/%k"

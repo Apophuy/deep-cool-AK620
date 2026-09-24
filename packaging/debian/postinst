@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+
+if [ "${1:-}" = configure ]; then
+    if ! getent group ak620 >/dev/null; then
+        groupadd --system ak620
+    fi
+    if ! getent passwd ak620 >/dev/null; then
+        useradd --system --gid ak620 --home-dir /nonexistent --shell /usr/sbin/nologin ak620
+    fi
+    if command -v udevadm >/dev/null 2>&1; then
+        if udevadm control --reload-rules; then
+            hidraw_sysfs=${AK620_HIDRAW_SYSFS:-/sys/class/hidraw}
+            for hidraw_dir in "$hidraw_sysfs"/hidraw*; do
+                [ -r "$hidraw_dir/device/uevent" ] || continue
+                if grep -qx 'HID_ID=0003:00003633:00000012' "$hidraw_dir/device/uevent"; then
+                    udevadm trigger --action=change --subsystem-match=hidraw \
+                        --sysname-match="${hidraw_dir##*/}" || true
+                fi
+            done
+            udevadm trigger --action=change --subsystem-match=powercap \
+                --attr-match=name=package-0 || true
+            udevadm settle --timeout=10 || true
+        fi
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl daemon-reload
+        systemctl enable --now ak620d.service || true
+    fi
+fi
+
+exit 0

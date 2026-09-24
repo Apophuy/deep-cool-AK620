@@ -4,7 +4,7 @@ use std::{env, fs, path::PathBuf};
 
 use eframe::egui;
 
-use crate::model::DaemonSnapshot;
+use crate::model::{DaemonSnapshot, TemperatureChoice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Language {
@@ -41,6 +41,7 @@ impl Language {
             }
             "Apply" => "Применить",
             "Diagnostics" => "Диагностика",
+            "Interface" => "Интерфейс",
             "Last update" => "Последнее обновление",
             "Language" => "Язык",
             "Theme" => "Тема",
@@ -89,6 +90,39 @@ impl Language {
                 "не удалось создать прокси службы",
             )
             .replace("ak620d is unavailable", "ak620d недоступна")
+    }
+    pub(crate) const fn temperature_choice(self, choice: TemperatureChoice) -> &'static str {
+        match (self, choice) {
+            (Self::English, TemperatureChoice::Celsius) => "Celsius",
+            (Self::English, TemperatureChoice::Fahrenheit) => "Fahrenheit",
+            (Self::Russian, TemperatureChoice::Celsius) => "Цельсий",
+            (Self::Russian, TemperatureChoice::Fahrenheit) => "Фаренгейт",
+        }
+    }
+    pub(crate) fn interval(self, milliseconds: u64) -> String {
+        if milliseconds < 1_000 || milliseconds % 1_000 != 0 {
+            return format!(
+                "{milliseconds} {}",
+                if self == Self::Russian { "мс" } else { "ms" }
+            );
+        }
+
+        let seconds = milliseconds / 1_000;
+        if self == Self::English {
+            return format!(
+                "{seconds} {}",
+                if seconds == 1 { "second" } else { "seconds" }
+            );
+        }
+
+        let word = match (seconds % 10, seconds % 100) {
+            (1, 11) => "секунд",
+            (1, _) => "секунда",
+            (2..=4, 12..=14) => "секунд",
+            (2..=4, _) => "секунды",
+            _ => "секунд",
+        };
+        format!("{seconds} {word}")
     }
     pub(crate) fn tray_title(self, snapshot: &DaemonSnapshot) -> String {
         if snapshot.has_metrics {
@@ -189,4 +223,33 @@ fn path() -> PathBuf {
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."))
         .join("ak620-linux/control-ui.conf")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Language;
+    use crate::model::TemperatureChoice;
+
+    #[test]
+    fn russian_setting_values_are_localized() {
+        assert_eq!(
+            Language::Russian.temperature_choice(TemperatureChoice::Celsius),
+            "Цельсий"
+        );
+        assert_eq!(
+            Language::Russian.temperature_choice(TemperatureChoice::Fahrenheit),
+            "Фаренгейт"
+        );
+        assert_eq!(Language::Russian.interval(250), "250 мс");
+        assert_eq!(Language::Russian.interval(1_000), "1 секунда");
+        assert_eq!(Language::Russian.interval(2_000), "2 секунды");
+        assert_eq!(Language::Russian.interval(5_000), "5 секунд");
+    }
+
+    #[test]
+    fn english_setting_values_are_localized() {
+        assert_eq!(Language::English.interval(500), "500 ms");
+        assert_eq!(Language::English.interval(1_000), "1 second");
+        assert_eq!(Language::English.interval(10_000), "10 seconds");
+    }
 }

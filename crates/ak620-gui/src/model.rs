@@ -1,5 +1,3 @@
-use std::fmt;
-
 /// Temperature choice accepted by the daemon's version-one D-Bus API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TemperatureChoice {
@@ -27,15 +25,6 @@ impl TemperatureChoice {
         match self {
             Self::Celsius => "°C",
             Self::Fahrenheit => "°F",
-        }
-    }
-}
-
-impl fmt::Display for TemperatureChoice {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Celsius => formatter.write_str("Celsius"),
-            Self::Fahrenheit => formatter.write_str("Fahrenheit"),
         }
     }
 }

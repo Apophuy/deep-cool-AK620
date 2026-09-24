@@ -39,7 +39,7 @@ When upgrading from 0.1.x, first stop its old per-user daemon to release the HID
 
 ```bash
 systemctl --user disable --now ak620d.service
-sudo apt install ./dist/ak620-linux_0.2.2_amd64.deb
+sudo apt install ./dist/ak620-linux_0.2.3_amd64.deb
 ```
 
 The second command upgrades `ak620-linux`; it does not require a separate removal. Reconnect the
@@ -103,7 +103,7 @@ HID-устройство:
 
 ```bash
 systemctl --user disable --now ak620d.service
-sudo apt install ./dist/ak620-linux_0.2.2_amd64.deb
+sudo apt install ./dist/ak620-linux_0.2.3_amd64.deb
 ```
 
 Вторая команда обновляет `ak620-linux`, отдельно удалять старый пакет не нужно. Если кулер уже был

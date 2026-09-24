@@ -44,8 +44,8 @@ Follow logs with `journalctl -u ak620d.service -f`.
 ### Upgrade from the old user service
 
 Release 0.1.x used `systemctl --user` and may still own the HID handle in the logged-in session.
-Before installing 0.2.2, run `systemctl --user disable --now ak620d.service`; then use
-`sudo apt install ./dist/ak620-linux_0.2.2_amd64.deb`. `apt` performs the package upgrade itself;
+Before installing 0.2.3, run `systemctl --user disable --now ak620d.service`; then use
+`sudo apt install ./dist/ak620-linux_0.2.3_amd64.deb`. `apt` performs the package upgrade itself;
 do not purge the old package unless a clean removal is specifically required.
 
 ## Configuration

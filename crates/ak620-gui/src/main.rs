@@ -487,13 +487,13 @@ fn app_visuals(dark: bool) -> egui::Visuals {
     visuals.faint_bg_color = card;
     visuals.extreme_bg_color = control;
     visuals.override_text_color = Some(text);
-    visuals.window_stroke = egui::Stroke::new(1.0, border);
+    visuals.window_stroke = egui::Stroke::new(1.0_f32, border);
     visuals.selection.bg_fill = accent;
-    visuals.selection.stroke = egui::Stroke::new(1.5, egui::Color32::WHITE);
+    visuals.selection.stroke = egui::Stroke::new(1.5_f32, egui::Color32::WHITE);
     visuals.widgets.noninteractive.bg_fill = card;
     visuals.widgets.noninteractive.weak_bg_fill = card;
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, border);
-    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, muted);
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, border);
+    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, muted);
     for (widget, fill) in [
         (&mut visuals.widgets.inactive, control),
         (&mut visuals.widgets.hovered, hover),
@@ -502,8 +502,8 @@ fn app_visuals(dark: bool) -> egui::Visuals {
     ] {
         widget.bg_fill = fill;
         widget.weak_bg_fill = fill;
-        widget.bg_stroke = egui::Stroke::new(1.0, border);
-        widget.fg_stroke = egui::Stroke::new(1.5, text);
+        widget.bg_stroke = egui::Stroke::new(1.0_f32, border);
+        widget.fg_stroke = egui::Stroke::new(1.5_f32, text);
         widget.corner_radius = egui::CornerRadius::same(7);
         widget.expansion = 0.0;
     }
@@ -590,7 +590,7 @@ fn section_card(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut e
     egui::Frame::group(ui.style())
         .fill(ui.visuals().faint_bg_color)
         .stroke(egui::Stroke::new(
-            1.0,
+            1.0_f32,
             ui.visuals().widgets.inactive.bg_stroke.color,
         ))
         .outer_margin(egui::Margin {
@@ -613,7 +613,7 @@ fn metric_card(ui: &mut egui::Ui, title: &str, value: String, color: egui::Color
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
         .stroke(egui::Stroke::new(
-            1.0,
+            1.0_f32,
             ui.visuals().widgets.noninteractive.bg_stroke.color,
         ))
         .corner_radius(egui::CornerRadius::same(12))
@@ -743,7 +743,7 @@ fn combo_arrow(
     };
     ui.painter().add(egui::Shape::line(
         points,
-        egui::Stroke::new(1.8, visuals.fg_stroke.color),
+        egui::Stroke::new(1.8_f32, visuals.fg_stroke.color),
     ));
 }
 
@@ -751,14 +751,14 @@ fn info_icon(ui: &mut egui::Ui) -> egui::Response {
     let (response, painter) = ui.allocate_painter(egui::vec2(16.0, 16.0), egui::Sense::hover());
     let center = response.rect.center();
     let color = ui.visuals().weak_text_color();
-    painter.circle_stroke(center, 6.0, egui::Stroke::new(1.2, color));
+    painter.circle_stroke(center, 6.0, egui::Stroke::new(1.2_f32, color));
     painter.circle_filled(egui::pos2(center.x, center.y - 2.5), 0.9, color);
     painter.line_segment(
         [
             egui::pos2(center.x, center.y),
             egui::pos2(center.x, center.y + 3.5),
         ],
-        egui::Stroke::new(1.4, color),
+        egui::Stroke::new(1.4_f32, color),
     );
     response
 }

@@ -10,10 +10,15 @@ The window polls the four values sent to the cooler, the selected HID path, conn
 the applied settings every second. Its D-Bus proxy disables property caching because the daemon
 publishes a fresh snapshot on every poll rather than emitting a change signal for every metric.
 Temperature unit changes and the bounded refresh interval are
-sent to the daemon, which validates and persists them. The native viewport resizes to the content
-height so it does not retain a blank fixed-height region. English and Russian plus System, Light,
-and Dark themes are selectable; System is the default. Presentation choices are per-user and do
-not affect shared daemon settings.
+sent to the daemon, which validates and persists them. The native viewport resizes in both
+dimensions to the localized content instead of retaining a fixed-width or blank region. The refresh
+interval uses localized presets, and its explanatory copy is available from the adjacent tooltip.
+English and Russian plus System, Light, and Dark themes are selectable; System is the default.
+Both explicit themes use application palettes for panels, cards, controls, and interaction states.
+Presentation choices are per-user and do not affect shared daemon settings.
+The diagnostics footer converts the daemon's Unix update timestamp to the fixed-width local
+`HH:MM:ss` representation. The pinned `time` crate performs the conversion using the host timezone;
+it requires no additional runtime service and supports the workspace MSRV.
 
 On KDE Plasma, `ksni` publishes a StatusNotifierItem with live summary text, a red attention icon
 for errors, localized error tooltips, Open settings, and Quit actions. The tray process owns the StatusNotifierItem and launches

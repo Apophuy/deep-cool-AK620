@@ -2,7 +2,7 @@ use std::{sync::mpsc, thread, time::Duration};
 
 use ksni::{Category, Status, ToolTip, Tray, blocking::TrayMethods, menu::StandardItem};
 
-use crate::{client::SharedSnapshot, model::DaemonSnapshot, preferences::Preferences};
+use crate::{client::SharedSnapshot, model::DaemonSnapshot, preferences::Preferences, tray_icons};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum WindowAction {
@@ -43,17 +43,22 @@ impl Tray for Ak620Tray {
         }
     }
 
-    fn icon_name(&self) -> String {
-        "io.github.ak620linux.Control".to_owned()
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        tray_icons::normal()
     }
 
-    fn attention_icon_name(&self) -> String {
-        "io.github.ak620linux.Control-attention".to_owned()
+    fn attention_icon_pixmap(&self) -> Vec<ksni::Icon> {
+        tray_icons::attention()
     }
 
     fn tool_tip(&self) -> ToolTip {
+        let icon_pixmap = if self.snapshot.connected() {
+            tray_icons::normal()
+        } else {
+            tray_icons::attention()
+        };
         ToolTip {
-            icon_name: self.icon_name(),
+            icon_pixmap,
             title: "AK620 DIGITAL PRO".to_owned(),
             description: if self.snapshot.connected() {
                 self.preferences.language.tray_title(&self.snapshot)

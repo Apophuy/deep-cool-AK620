@@ -4,6 +4,7 @@ mod client;
 mod model;
 mod preferences;
 mod tray;
+mod tray_icons;
 
 use std::{
     env,

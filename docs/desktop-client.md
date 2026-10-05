@@ -21,7 +21,9 @@ The diagnostics footer converts the daemon's Unix update timestamp to the fixed-
 it requires no additional runtime service and supports the workspace MSRV.
 
 On KDE Plasma, `ksni` publishes a StatusNotifierItem with live summary text, a red attention icon
-for errors, localized error tooltips, Open settings, and Quit actions. The tray process owns the StatusNotifierItem and launches
+for errors, localized error tooltips, Open settings, and Quit actions. The client supplies embedded
+22, 32, and 48 pixel ARGB pixmaps directly instead of relying on the desktop icon-theme cache. The
+tray process owns the StatusNotifierItem and launches
 the settings window as a child process. Closing settings closes that window normally and leaves the
 existing tray item running. The tray reuses a running window rather than launching another one; once
 the window has closed, the next Open settings action starts one replacement window. The package

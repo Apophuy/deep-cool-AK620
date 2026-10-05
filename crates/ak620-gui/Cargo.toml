@@ -12,6 +12,9 @@ path = "src/main.rs"
 
 [dependencies]
 eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+# Decode the packaged PNG artwork into StatusNotifierItem ARGB pixmaps. The PNG-only feature is
+# pure Rust and adds no Linux runtime dependency; this version is already locked through eframe.
+image = { version = "=0.25.5", default-features = false, features = ["png"] }
 ksni = { version = "=0.3.3", features = ["blocking"] }
 # Convert the daemon's Unix timestamp to local wall-clock time. Pure Rust apart from libc-backed
 # timezone lookup; time 0.3.41 supports the workspace MSRV and adds no external system service.

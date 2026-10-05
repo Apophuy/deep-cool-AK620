@@ -41,8 +41,10 @@ report through `ak620-core`, writes at a bounded interval, and reconnects with b
 The daemon locks `hidapi` to its native basic-udev backend and uses `zbus` on the session bus.
 `zbus` and `zbus_macros` are pinned together at 5.11 because newer macro releases generate code
 which is incompatible with that MSRV-compatible library release. The client uses `eframe`/`egui`
-0.31 with Wayland and X11 enabled, plus `ksni` for KDE StatusNotifierItem. D-Bus and tray work run
-on worker threads rather than the UI event loop.
+0.31 with Wayland and X11 enabled, plus `ksni` for KDE StatusNotifierItem. The already-locked
+pure-Rust `image` crate decodes embedded PNG artwork into ARGB tray pixmaps and enables only its PNG
+codec, so it adds no Linux system dependency. D-Bus and tray work run on worker threads rather than
+the UI event loop.
 
 ## Permissions
 

@@ -44,8 +44,8 @@ Follow logs with `journalctl -u ak620d.service -f`.
 ### Upgrade from the old user service
 
 Release 0.1.x used `systemctl --user` and may still own the HID handle in the logged-in session.
-Before installing 0.2.5, run `systemctl --user disable --now ak620d.service`; then use
-`sudo apt install ./dist/ak620-linux_0.2.5_amd64.deb`. `apt` performs the package upgrade itself;
+Before installing 0.3.1, run `systemctl --user disable --now ak620d.service`; then use
+`sudo apt install ./dist/ak620-linux_0.3.1_amd64.deb`. `apt` performs the package upgrade itself;
 do not purge the old package unless a clean removal is specifically required.
 
 ## Configuration
@@ -64,7 +64,7 @@ The interval is restricted to 250–10000 ms. Settings submitted by any desktop 
 by the daemon and atomically persisted. Since the display is hardware-global, its settings are
 shared among local users. GUI language/theme choices remain per-user.
 
-## D-Bus API version 1
+## D-Bus API version 2
 
 - Bus: system bus
 - Name: `io.github.ak620linux.Daemon`
@@ -73,9 +73,12 @@ shared among local users. GUI language/theme choices remain per-user.
 
 The package D-Bus policy allows local desktop users to read status and submit the two validated
 settings methods. Read-only properties include connection state, device path, last error, the four
-latest display metrics, current settings, and last update time. The GUI refreshes them every
-second, so an early permission error is replaced by current daemon state without reopening the
-window.
+latest display metrics, current settings, last update time, and the optional host-telemetry
+snapshot used by the desktop overview. API 2 adds CPU/GPU/system inventory, AMD GPU load, clock,
+temperature and VRAM, memory use, mounted-filesystem use, disk and network throughput, and an
+optional hwmon fan speed. Every optional source is read-only and hidden when unavailable. The GUI
+refreshes properties every second, so an early permission error is replaced by current daemon
+state without reopening the window.
 
 ## Packages
 

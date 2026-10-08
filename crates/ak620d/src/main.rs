@@ -17,7 +17,7 @@ use ak620d::{
     config::{Config, default_config_path},
     dbus::{DaemonCommand, StatusStore, start_system_service},
     hid::Ak620Device,
-    metrics::LinuxMetricSampler,
+    metrics::{LinuxMetricSampler, LinuxTelemetrySampler},
     service::ReconnectBackoff,
 };
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -54,6 +54,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     );
 
     let mut sampler = None;
+    let mut telemetry_sampler = None;
     let mut device = None;
     let mut backoff = ReconnectBackoff::default();
 
@@ -65,6 +66,16 @@ fn run() -> Result<(), Box<dyn Error>> {
             &mut sampler,
             &status,
         );
+
+        if telemetry_sampler.is_none() {
+            match LinuxTelemetrySampler::discover() {
+                Ok(discovered) => telemetry_sampler = Some(discovered),
+                Err(error) => {
+                    warn!(error = %error, "host telemetry discovery failed; optional metrics are hidden");
+                }
+            }
+        }
+        refresh_optional_telemetry(&mut telemetry_sampler, &status);
 
         if sampler.is_none() {
             match LinuxMetricSampler::discover(TemperatureUnit::from(config.temperature_unit())) {
@@ -198,6 +209,19 @@ fn run() -> Result<(), Box<dyn Error>> {
     dbus_service.shutdown();
     info!("shutdown signal received");
     Ok(())
+}
+
+fn refresh_optional_telemetry(sampler: &mut Option<LinuxTelemetrySampler>, status: &StatusStore) {
+    let Some(telemetry) = sampler.as_mut() else {
+        return;
+    };
+    match telemetry.sample() {
+        Ok(snapshot) => status.record_telemetry(snapshot),
+        Err(error) => {
+            warn!(error = %error, "host telemetry update failed; rediscovering optional sources");
+            *sampler = None;
+        }
+    }
 }
 
 fn apply_pending_commands(

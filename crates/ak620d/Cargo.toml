@@ -10,6 +10,9 @@ default-run = "ak620d"
 [dependencies]
 ak620-core = { path = "../ak620-core" }
 hidapi = { version = "2.6.7", default-features = false, features = ["linux-native-basic-udev"] }
+# Read mounted-filesystem capacity through a safe POSIX wrapper. The locked release is pure Rust
+# over the platform ABI and needs no additional Debian runtime package.
+rustix = { version = "=1.1.4", features = ["fs"] }
 serde = { version = "1.0.228", features = ["derive"] }
 signal-hook = "0.3.18"
 toml = "=0.8.23"

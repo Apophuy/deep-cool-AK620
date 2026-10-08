@@ -551,14 +551,14 @@ fn navigation_logo(ui: &mut egui::Ui) {
                 egui::pos2(center.x + 12.0, center.y - 7.0),
                 egui::pos2(center.x + 12.0, center.y + 7.0),
             ],
-            egui::Stroke::new(2.5, accent),
+            egui::Stroke::new(2.5_f32, accent),
         );
         painter.line_segment(
             [
                 egui::pos2(center.x + 7.0, center.y),
                 egui::pos2(center.x + 17.0, center.y),
             ],
-            egui::Stroke::new(2.5, accent),
+            egui::Stroke::new(2.5_f32, accent),
         );
     });
 }
@@ -599,7 +599,7 @@ fn navigation_button(ui: &mut egui::Ui, page: &mut Page, value: Page, label: &st
         ui.painter().rect_stroke(
             rect.shrink(2.0),
             egui::CornerRadius::same(7),
-            egui::Stroke::new(1.0, accent),
+            egui::Stroke::new(1.0_f32, accent),
             egui::StrokeKind::Inside,
         );
     }
@@ -616,7 +616,7 @@ fn paint_navigation_icon(
     page: Page,
     color: egui::Color32,
 ) {
-    let stroke = egui::Stroke::new(1.8, color);
+    let stroke = egui::Stroke::new(1.8_f32, color);
     match page {
         Page::Monitoring => {
             painter.add(egui::Shape::line(
@@ -802,11 +802,11 @@ fn dual_gauge(
     let temperature_color = rgb(82, 194, 187);
     painter.add(egui::Shape::line(
         arc_points(center, 74.0, start_degrees, sweep_degrees, 48),
-        egui::Stroke::new(7.0, track),
+        egui::Stroke::new(7.0_f32, track),
     ));
     painter.add(egui::Shape::line(
         arc_points(center, 61.0, start_degrees, sweep_degrees, 48),
-        egui::Stroke::new(4.0, track),
+        egui::Stroke::new(4.0_f32, track),
     ));
     if let Some(load) = load_percent {
         painter.add(egui::Shape::line(
@@ -817,7 +817,7 @@ fn dual_gauge(
                 sweep_degrees * gauge_fraction(f32::from(load), 100.0),
                 48,
             ),
-            egui::Stroke::new(7.0, accent),
+            egui::Stroke::new(7.0_f32, accent),
         ));
     }
     if let Some(temperature) = temperature_celsius {
@@ -829,7 +829,7 @@ fn dual_gauge(
                 sweep_degrees * gauge_fraction(temperature, 120.0),
                 48,
             ),
-            egui::Stroke::new(4.0, temperature_color),
+            egui::Stroke::new(4.0_f32, temperature_color),
         ));
     }
     painter.text(
@@ -1015,14 +1015,14 @@ fn network_rate(ui: &mut egui::Ui, upward: bool, label: &str, bytes_per_second: 
         let direction = if upward { -1.0 } else { 1.0 };
         let tip = egui::pos2(center.x, center.y + direction * 8.0);
         let tail = egui::pos2(center.x, center.y - direction * 8.0);
-        painter.line_segment([tail, tip], egui::Stroke::new(2.0, accent));
+        painter.line_segment([tail, tip], egui::Stroke::new(2.0_f32, accent));
         painter.line_segment(
             [tip, egui::pos2(tip.x - 4.5, tip.y - direction * 4.5)],
-            egui::Stroke::new(2.0, accent),
+            egui::Stroke::new(2.0_f32, accent),
         );
         painter.line_segment(
             [tip, egui::pos2(tip.x + 4.5, tip.y - direction * 4.5)],
-            egui::Stroke::new(2.0, accent),
+            egui::Stroke::new(2.0_f32, accent),
         );
         ui.vertical(|ui| {
             ui.label(
@@ -1043,7 +1043,7 @@ fn dashboard_card(
     egui::Frame::new()
         .fill(ui.visuals().faint_bg_color)
         .stroke(egui::Stroke::new(
-            1.0,
+            1.0_f32,
             ui.visuals().widgets.noninteractive.bg_stroke.color,
         ))
         .corner_radius(egui::CornerRadius::same(8))

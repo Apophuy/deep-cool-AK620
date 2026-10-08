@@ -79,6 +79,11 @@ The ordinary daemon tests also use a fake report writer, a fake metric source, b
 tests, TOML round trips, and direct D-Bus interface method tests. Starting `ak620d` itself is not
 part of `make check`, because the binary intentionally attempts real sensor and HID discovery.
 
+Host-telemetry tests use the same isolated fixture approach. They cover memory parsing, physical
+disk filtering and byte-rate conversion, non-loopback network counters, active AMD GPU clock
+parsing, PCI display-name lookup, and sampling deltas. Tests never read the host's DRM or hwmon
+trees.
+
 GUI unit tests cover D-Bus temperature values, metric presentation, and draft-setting
 resynchronization without starting a window server, system bus, or tray watcher. Native window and
 StatusNotifierItem acceptance remain manual desktop tests because CI is intentionally headless.

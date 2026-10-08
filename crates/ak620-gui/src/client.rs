@@ -162,6 +162,7 @@ async fn send_command(proxy: &Proxy<'_>, command: ClientCommand) -> zbus::Result
 }
 
 async fn read_snapshot(proxy: &Proxy<'_>) -> zbus::Result<DaemonSnapshot> {
+    let api_version = proxy.get_property("ApiVersion").await?;
     let unit: String = proxy.get_property("TemperatureUnit").await?;
     let temperature_unit = TemperatureChoice::from_dbus_str(&unit).ok_or_else(|| {
         zbus::Error::Failure(format!(
@@ -169,8 +170,8 @@ async fn read_snapshot(proxy: &Proxy<'_>) -> zbus::Result<DaemonSnapshot> {
         ))
     })?;
 
-    Ok(DaemonSnapshot {
-        api_version: proxy.get_property("ApiVersion").await?,
+    let mut snapshot = DaemonSnapshot {
+        api_version,
         connection_state: proxy.get_property("ConnectionState").await?,
         device_path: proxy.get_property("DevicePath").await?,
         last_error: proxy.get_property("LastError").await?,
@@ -182,7 +183,40 @@ async fn read_snapshot(proxy: &Proxy<'_>) -> zbus::Result<DaemonSnapshot> {
         last_update_unix_seconds: proxy.get_property("LastUpdateUnixSeconds").await?,
         update_interval_ms: proxy.get_property("UpdateIntervalMs").await?,
         temperature_unit,
-    })
+        ..DaemonSnapshot::default()
+    };
+    if api_version >= 2 {
+        snapshot.has_telemetry = proxy.get_property("HasTelemetry").await?;
+        snapshot.host_name = proxy.get_property("HostName").await?;
+        snapshot.operating_system = proxy.get_property("OperatingSystem").await?;
+        snapshot.cpu_name = proxy.get_property("CpuName").await?;
+        snapshot.gpu_name = proxy.get_property("GpuName").await?;
+        snapshot.motherboard_name = proxy.get_property("MotherboardName").await?;
+        snapshot.memory_description = proxy.get_property("MemoryDescription").await?;
+        snapshot.drive_models = proxy.get_property("DriveModels").await?;
+        snapshot.has_gpu_metrics = proxy.get_property("HasGpuMetrics").await?;
+        snapshot.gpu_utilization_percent = proxy.get_property("GpuUtilizationPercent").await?;
+        snapshot.gpu_frequency_mhz = proxy.get_property("GpuFrequencyMhz").await?;
+        snapshot.gpu_temperature_celsius = proxy.get_property("GpuTemperatureCelsius").await?;
+        snapshot.gpu_memory_used_bytes = proxy.get_property("GpuMemoryUsedBytes").await?;
+        snapshot.gpu_memory_total_bytes = proxy.get_property("GpuMemoryTotalBytes").await?;
+        snapshot.memory_used_bytes = proxy.get_property("MemoryUsedBytes").await?;
+        snapshot.memory_total_bytes = proxy.get_property("MemoryTotalBytes").await?;
+        snapshot.storage_labels = proxy.get_property("StorageLabels").await?;
+        snapshot.storage_used_bytes = proxy.get_property("StorageUsedBytes").await?;
+        snapshot.storage_total_bytes = proxy.get_property("StorageTotalBytes").await?;
+        snapshot.storage_read_bytes_per_second =
+            proxy.get_property("StorageReadBytesPerSecond").await?;
+        snapshot.storage_write_bytes_per_second =
+            proxy.get_property("StorageWriteBytesPerSecond").await?;
+        snapshot.network_receive_bytes_per_second =
+            proxy.get_property("NetworkReceiveBytesPerSecond").await?;
+        snapshot.network_transmit_bytes_per_second =
+            proxy.get_property("NetworkTransmitBytesPerSecond").await?;
+        snapshot.has_fan_rpm = proxy.get_property("HasFanRpm").await?;
+        snapshot.fan_rpm = proxy.get_property("FanRpm").await?;
+    }
+    Ok(snapshot)
 }
 
 #[cfg(test)]

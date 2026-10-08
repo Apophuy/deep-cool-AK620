@@ -17,14 +17,14 @@ use std::{
 
 use client::{ClientCommand, SharedSnapshot};
 use eframe::egui;
-use model::{SettingsDraft, TemperatureChoice};
+use model::{DaemonSnapshot, SettingsDraft, TemperatureChoice};
 use preferences::{Language, Preferences, ThemeChoice};
 use time::{OffsetDateTime, UtcOffset};
 use tray::WindowAction;
 
 const APP_ID: &str = "io.github.ak620linux.Control";
 const INSTALLED_EXECUTABLE: &str = "/usr/bin/ak620-control";
-const INITIAL_WINDOW_SIZE: [f32; 2] = [500.0, 620.0];
+const INITIAL_WINDOW_SIZE: [f32; 2] = [1_050.0, 720.0];
 const WINDOW_MARGIN_X: i8 = 20;
 const WINDOW_MARGIN_Y: i8 = 16;
 const UPDATE_INTERVALS_MS: [u64; 6] = [250, 500, 1_000, 2_000, 5_000, 10_000];
@@ -52,7 +52,7 @@ fn run_window() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_app_id(APP_ID)
             .with_inner_size(INITIAL_WINDOW_SIZE)
-            .with_min_inner_size([360.0, 420.0]),
+            .with_min_inner_size([760.0, 520.0]),
         ..eframe::NativeOptions::default()
     };
     eframe::run_native(
@@ -131,7 +131,16 @@ struct ControlApp {
     settings: SettingsDraft,
     preferences: Preferences,
     local_error: Option<String>,
-    last_content_height: f32,
+    page: Page,
+    cooler_texture: Option<egui::TextureHandle>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Page {
+    Monitoring,
+    System,
+    Device,
+    Settings,
 }
 
 impl ControlApp {
@@ -149,7 +158,8 @@ impl ControlApp {
             client_commands,
             preferences,
             local_error: None,
-            last_content_height: 0.0,
+            page: Page::Monitoring,
+            cooler_texture: load_cooler_texture(context),
         }
     }
     fn send(&mut self, command: ClientCommand) {
@@ -162,6 +172,328 @@ impl ControlApp {
             );
         }
     }
+
+    fn show_navigation(&mut self, context: &egui::Context, language: Language) {
+        egui::SidePanel::left("navigation")
+            .resizable(false)
+            .exact_width(72.0)
+            .frame(
+                egui::Frame::default()
+                    .fill(context.style().visuals.extreme_bg_color)
+                    .inner_margin(egui::Margin::symmetric(10, 16)),
+            )
+            .show(context, |ui| {
+                navigation_logo(ui);
+                ui.add_space(18.0);
+                navigation_button(
+                    ui,
+                    &mut self.page,
+                    Page::Monitoring,
+                    language.text("Monitoring"),
+                );
+                navigation_button(
+                    ui,
+                    &mut self.page,
+                    Page::System,
+                    language.text("System information"),
+                );
+                navigation_button(ui, &mut self.page, Page::Device, language.text("Device"));
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                    navigation_button(
+                        ui,
+                        &mut self.page,
+                        Page::Settings,
+                        language.text("Settings"),
+                    );
+                });
+            });
+    }
+
+    fn show_monitoring(&self, ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+        ui.horizontal(|ui| {
+            page_heading(ui, language.text("Monitoring"));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                connection_badge(ui, snapshot, language);
+            });
+        });
+        ui.add_space(12.0);
+
+        if snapshot.has_gpu_metrics && ui.available_width() >= 720.0 {
+            ui.columns(2, |columns| {
+                cpu_overview_card(&mut columns[0], snapshot, language);
+                gpu_overview_card(&mut columns[1], snapshot, language);
+            });
+        } else {
+            cpu_overview_card(ui, snapshot, language);
+            if snapshot.has_gpu_metrics {
+                ui.add_space(10.0);
+                gpu_overview_card(ui, snapshot, language);
+            }
+        }
+
+        let show_memory = snapshot.memory_total_bytes > 0;
+        let show_storage = !snapshot.storage_labels.is_empty();
+        let show_network = snapshot.has_telemetry;
+        if show_memory || show_storage || show_network {
+            ui.add_space(10.0);
+            if ui.available_width() >= 720.0 {
+                ui.columns(3, |columns| {
+                    if show_memory {
+                        memory_overview_card(&mut columns[0], snapshot, language);
+                    }
+                    if show_storage {
+                        storage_overview_card(&mut columns[1], snapshot, language);
+                    }
+                    if show_network {
+                        network_overview_card(&mut columns[2], snapshot, language);
+                    }
+                });
+            } else {
+                if show_memory {
+                    memory_overview_card(ui, snapshot, language);
+                    ui.add_space(10.0);
+                }
+                if show_storage {
+                    storage_overview_card(ui, snapshot, language);
+                    ui.add_space(10.0);
+                }
+                if show_network {
+                    network_overview_card(ui, snapshot, language);
+                }
+            }
+        }
+    }
+
+    fn show_system(&self, ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+        page_heading(ui, language.text("Computer configuration"));
+        ui.add_space(12.0);
+        section_card(ui, language.text("System information"), |ui| {
+            info_row(ui, language.text("Device name"), &snapshot.host_name);
+            info_row(
+                ui,
+                language.text("Operating system"),
+                &snapshot.operating_system,
+            );
+            info_row(ui, "CPU", &snapshot.cpu_name);
+            info_row(ui, "GPU", &snapshot.gpu_name);
+            info_row(ui, language.text("Motherboard"), &snapshot.motherboard_name);
+            info_row(ui, language.text("Memory"), &snapshot.memory_description);
+            if !snapshot.drive_models.is_empty() {
+                ui.label(egui::RichText::new(language.text("Drives")).strong());
+                for drive in &snapshot.drive_models {
+                    ui.weak(drive);
+                }
+            }
+        });
+    }
+
+    fn show_device(&self, ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+        page_heading(ui, language.text("Device"));
+        ui.add_space(12.0);
+        section_card(ui, "AK620 DIGITAL PRO", |ui| {
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.heading(egui::RichText::new("AK620 DIGITAL PRO").size(28.0));
+                    ui.weak(language.text("Digital air cooler"));
+                    if snapshot.connected() && !snapshot.device_path.is_empty() {
+                        ui.add_space(8.0);
+                        ui.monospace(&snapshot.device_path);
+                    }
+                });
+                if let Some(texture) = &self.cooler_texture {
+                    let available = ui.available_width().min(330.0);
+                    ui.add(
+                        egui::Image::new(texture)
+                            .max_width(available)
+                            .max_height(190.0),
+                    );
+                }
+            });
+            if snapshot.has_metrics {
+                ui.separator();
+                ui.horizontal_wrapped(|ui| {
+                    device_metric(
+                        ui,
+                        language.text("CPU temperature"),
+                        format!(
+                            "{:.0} {}",
+                            snapshot.temperature_degrees,
+                            snapshot.temperature_unit.symbol()
+                        ),
+                    );
+                    device_metric(
+                        ui,
+                        language.text("CPU frequency"),
+                        format!("{:.1} GHz", f64::from(snapshot.frequency_mhz) / 1_000.0),
+                    );
+                    if snapshot.has_fan_rpm {
+                        device_metric(
+                            ui,
+                            language.text("Fan speed"),
+                            format!("{} RPM", snapshot.fan_rpm),
+                        );
+                    }
+                });
+            }
+        });
+    }
+
+    fn show_settings(
+        &mut self,
+        ui: &mut egui::Ui,
+        context: &egui::Context,
+        snapshot: &DaemonSnapshot,
+        language: Language,
+    ) {
+        page_heading(ui, language.text("Settings"));
+        ui.add_space(12.0);
+        section_card(ui, language.text("Display settings"), |ui| {
+            let available_width = ui.available_width();
+            let label_width = settings_label_width(ui, language);
+            let control_width = available_width - label_width - 18.0;
+            let stacked = control_width < 200.0;
+            let previous_unit = self.settings.temperature_unit;
+
+            if stacked {
+                ui.label(language.text("Temperature unit"));
+                temperature_selector(
+                    ui,
+                    &mut self.settings.temperature_unit,
+                    language,
+                    available_width,
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(language.text("Refresh interval"));
+                    info_icon(ui).on_hover_text(
+                        language.text("How often the display receives new sensor values"),
+                    );
+                });
+                if interval_controls(
+                    ui,
+                    &mut self.settings.interval_ms,
+                    language,
+                    available_width,
+                ) {
+                    self.send(ClientCommand::SetUpdateIntervalMs(
+                        self.settings.interval_ms,
+                    ));
+                }
+            } else {
+                egui::Grid::new("display-settings")
+                    .num_columns(2)
+                    .spacing([18.0, 12.0])
+                    .show(ui, |ui| {
+                        ui.label(language.text("Temperature unit"));
+                        temperature_selector(
+                            ui,
+                            &mut self.settings.temperature_unit,
+                            language,
+                            control_width,
+                        );
+                        ui.end_row();
+                        ui.horizontal(|ui| {
+                            ui.label(language.text("Refresh interval"));
+                            info_icon(ui).on_hover_text(
+                                language.text("How often the display receives new sensor values"),
+                            );
+                        });
+                        if interval_controls(
+                            ui,
+                            &mut self.settings.interval_ms,
+                            language,
+                            control_width,
+                        ) {
+                            self.send(ClientCommand::SetUpdateIntervalMs(
+                                self.settings.interval_ms,
+                            ));
+                        }
+                        ui.end_row();
+                    });
+            }
+            if self.settings.temperature_unit != previous_unit {
+                self.send(ClientCommand::SetTemperatureUnit(
+                    self.settings.temperature_unit,
+                ));
+            }
+        });
+
+        ui.add_space(10.0);
+        section_card(ui, language.text("Interface"), |ui| {
+            let old_language = self.preferences.language;
+            let old_theme = self.preferences.theme;
+            ui.columns(2, |columns| {
+                columns[0].label(language.text("Language"));
+                let language_width = columns[0].available_width();
+                styled_combo_box(
+                    "language",
+                    self.preferences.language.label(),
+                    language_width,
+                )
+                .show_ui(&mut columns[0], |ui| {
+                    ui.selectable_value(
+                        &mut self.preferences.language,
+                        Language::English,
+                        "English",
+                    );
+                    ui.selectable_value(
+                        &mut self.preferences.language,
+                        Language::Russian,
+                        "Русский",
+                    );
+                });
+                columns[1].label(language.text("Theme"));
+                let theme_width = columns[1].available_width();
+                styled_combo_box("theme", self.preferences.theme.label(language), theme_width)
+                    .show_ui(&mut columns[1], |ui| {
+                        ui.selectable_value(
+                            &mut self.preferences.theme,
+                            ThemeChoice::System,
+                            language.text("System"),
+                        );
+                        ui.selectable_value(
+                            &mut self.preferences.theme,
+                            ThemeChoice::Light,
+                            language.text("Light"),
+                        );
+                        ui.selectable_value(
+                            &mut self.preferences.theme,
+                            ThemeChoice::Dark,
+                            language.text("Dark"),
+                        );
+                    });
+            });
+            ui.add_space(6.0);
+            ui.separator();
+            ui.horizontal_wrapped(|ui| {
+                diagnostic_value(ui, "D-Bus API", snapshot.api_version.to_string());
+                ui.separator();
+                diagnostic_value(
+                    ui,
+                    language.text("Last update"),
+                    format_update_time(snapshot.last_update_unix_seconds),
+                );
+            });
+            if !snapshot.last_error.is_empty() {
+                ui.colored_label(
+                    egui::Color32::from_rgb(230, 102, 82),
+                    language.localize_error(&snapshot.last_error),
+                );
+            }
+            if let Some(error) = &self.local_error {
+                ui.colored_label(egui::Color32::RED, error);
+            }
+            if snapshot.api_version > 2 {
+                ui.label(language.text("This daemon exposes a newer API; update ak620-control."));
+            }
+            if old_theme != self.preferences.theme {
+                apply_theme(context, self.preferences.theme);
+            }
+            if old_language != self.preferences.language || old_theme != self.preferences.theme {
+                self.preferences.save();
+            }
+        });
+    }
 }
 
 impl eframe::App for ControlApp {
@@ -169,7 +501,7 @@ impl eframe::App for ControlApp {
         let snapshot = self.shared.get();
         self.settings.sync(&snapshot);
         let language = self.preferences.language;
-        let mut content_height = 0.0;
+        self.show_navigation(context, language);
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::default()
@@ -178,257 +510,642 @@ impl eframe::App for ControlApp {
             )
             .show(context, |ui| {
                 egui::ScrollArea::vertical()
-                    .auto_shrink([false, true])
-                    .show(ui, |ui| {
-                        let content_top = ui.cursor().top();
-                        let metric_colors = metric_colors(ui.visuals().dark_mode);
-                        ui.horizontal_wrapped(|ui| {
-                            ui.heading(egui::RichText::new("AK620 DIGITAL PRO").size(26.0));
-                            ui.add_space(8.0);
-                            let (color, text) = if snapshot.connected() {
-                                (
-                                    egui::Color32::from_rgb(45, 205, 110),
-                                    language.text("Connected"),
-                                )
-                            } else {
-                                (
-                                    egui::Color32::from_rgb(220, 85, 70),
-                                    language.text("Disconnected"),
-                                )
-                            };
-                            let (response, painter) =
-                                ui.allocate_painter(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                            painter.circle_filled(response.rect.center(), 5.5, color);
-                            ui.label(egui::RichText::new(text).strong().color(color));
-                            if !snapshot.device_path.is_empty() {
-                                ui.weak(&snapshot.device_path);
-                            }
-                        });
-                        ui.add_space(10.0);
-                        responsive_metrics(
-                            ui,
-                            [
-                                (
-                                    language.text("Temperature"),
-                                    if snapshot.has_metrics {
-                                        format!(
-                                            "{:.0} {}",
-                                            snapshot.temperature_degrees,
-                                            snapshot.temperature_unit.symbol()
-                                        )
-                                    } else {
-                                        "—".to_owned()
-                                    },
-                                    metric_colors[0],
-                                ),
-                                (
-                                    language.text("CPU utilization"),
-                                    metric_with_unit(
-                                        snapshot.has_metrics,
-                                        snapshot.utilization_percent,
-                                        "%",
-                                    ),
-                                    metric_colors[1],
-                                ),
-                                (
-                                    language.text("CPU package power"),
-                                    metric_with_unit(
-                                        snapshot.has_metrics,
-                                        snapshot.power_watts,
-                                        "W",
-                                    ),
-                                    metric_colors[2],
-                                ),
-                                (
-                                    language.text("Highest core frequency"),
-                                    metric_with_unit(
-                                        snapshot.has_metrics,
-                                        snapshot.frequency_mhz,
-                                        "MHz",
-                                    ),
-                                    metric_colors[3],
-                                ),
-                            ],
-                        );
-                        ui.add_space(8.0);
-                        section_card(ui, language.text("Display settings"), |ui| {
-                            let available_width = ui.available_width();
-                            let label_width = settings_label_width(ui, language);
-                            let control_width = available_width - label_width - 18.0;
-                            let stacked = control_width < 200.0;
-                            let previous_unit = self.settings.temperature_unit;
-
-                            if stacked {
-                                ui.label(language.text("Temperature unit"));
-                                temperature_selector(
-                                    ui,
-                                    &mut self.settings.temperature_unit,
-                                    language,
-                                    available_width,
-                                );
-                                ui.add_space(8.0);
-                                ui.horizontal(|ui| {
-                                    ui.label(language.text("Refresh interval"));
-                                    info_icon(ui).on_hover_text(
-                                        language.text(
-                                            "How often the display receives new sensor values",
-                                        ),
-                                    );
-                                });
-                                if interval_controls(
-                                    ui,
-                                    &mut self.settings.interval_ms,
-                                    language,
-                                    available_width,
-                                ) {
-                                    self.send(ClientCommand::SetUpdateIntervalMs(
-                                        self.settings.interval_ms,
-                                    ));
-                                }
-                            } else {
-                                egui::Grid::new("display-settings")
-                                    .num_columns(2)
-                                    .spacing([18.0, 12.0])
-                                    .show(ui, |ui| {
-                                        ui.label(language.text("Temperature unit"));
-                                        temperature_selector(
-                                            ui,
-                                            &mut self.settings.temperature_unit,
-                                            language,
-                                            control_width,
-                                        );
-                                        ui.end_row();
-
-                                        ui.horizontal(|ui| {
-                                            ui.label(language.text("Refresh interval"));
-                                            info_icon(ui).on_hover_text(language.text(
-                                                "How often the display receives new sensor values",
-                                            ));
-                                        });
-                                        if interval_controls(
-                                            ui,
-                                            &mut self.settings.interval_ms,
-                                            language,
-                                            control_width,
-                                        ) {
-                                            self.send(ClientCommand::SetUpdateIntervalMs(
-                                                self.settings.interval_ms,
-                                            ));
-                                        }
-                                        ui.end_row();
-                                    });
-                            }
-
-                            if self.settings.temperature_unit != previous_unit {
-                                self.send(ClientCommand::SetTemperatureUnit(
-                                    self.settings.temperature_unit,
-                                ));
-                            }
-                        });
-                        ui.add_space(8.0);
-                        section_card(ui, language.text("Interface"), |ui| {
-                            let old_language = self.preferences.language;
-                            let old_theme = self.preferences.theme;
-                            ui.columns(2, |columns| {
-                                columns[0].label(language.text("Language"));
-                                let language_width = columns[0].available_width();
-                                styled_combo_box(
-                                    "language",
-                                    self.preferences.language.label(),
-                                    language_width,
-                                )
-                                .show_ui(&mut columns[0], |ui| {
-                                    ui.selectable_value(
-                                        &mut self.preferences.language,
-                                        Language::English,
-                                        "English",
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.preferences.language,
-                                        Language::Russian,
-                                        "Русский",
-                                    );
-                                });
-
-                                columns[1].label(language.text("Theme"));
-                                let theme_width = columns[1].available_width();
-                                styled_combo_box(
-                                    "theme",
-                                    self.preferences.theme.label(language),
-                                    theme_width,
-                                )
-                                .show_ui(&mut columns[1], |ui| {
-                                    ui.selectable_value(
-                                        &mut self.preferences.theme,
-                                        ThemeChoice::System,
-                                        language.text("System"),
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.preferences.theme,
-                                        ThemeChoice::Light,
-                                        language.text("Light"),
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.preferences.theme,
-                                        ThemeChoice::Dark,
-                                        language.text("Dark"),
-                                    );
-                                });
-                            });
-                            ui.add_space(6.0);
-                            ui.separator();
-                            ui.add_space(2.0);
-                            ui.horizontal_wrapped(|ui| {
-                                diagnostic_value(ui, "D-Bus API", snapshot.api_version.to_string());
-                                ui.separator();
-                                diagnostic_value(
-                                    ui,
-                                    language.text("Last update"),
-                                    format_update_time(snapshot.last_update_unix_seconds),
-                                );
-                            });
-                            if !snapshot.last_error.is_empty() {
-                                ui.add_space(6.0);
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(230, 102, 82),
-                                    language.localize_error(&snapshot.last_error),
-                                );
-                            }
-                            if let Some(error) = &self.local_error {
-                                ui.colored_label(egui::Color32::RED, error);
-                            }
-                            if snapshot.api_version > 1 {
-                                ui.label(language.text(
-                                    "This daemon exposes a newer API; update ak620-control.",
-                                ));
-                            }
-                            if old_theme != self.preferences.theme {
-                                apply_theme(context, self.preferences.theme);
-                            }
-                            if old_language != self.preferences.language
-                                || old_theme != self.preferences.theme
-                            {
-                                self.preferences.save();
-                            }
-                        });
-                        ui.add_space(8.0);
-                        content_height = ui.cursor().top() - content_top;
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| match self.page {
+                        Page::Monitoring => self.show_monitoring(ui, &snapshot, language),
+                        Page::System => self.show_system(ui, &snapshot, language),
+                        Page::Device => self.show_device(ui, &snapshot, language),
+                        Page::Settings => {
+                            self.show_settings(ui, context, &snapshot, language);
+                        }
                     });
             });
-        let desired_height = (content_height + f32::from(WINDOW_MARGIN_Y) * 2.0).ceil();
-        if (desired_height - self.last_content_height).abs() > 1.0 {
-            context.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
-                context.input(|input| {
-                    input
-                        .viewport()
-                        .inner_rect
-                        .map_or(INITIAL_WINDOW_SIZE[0], |rect| rect.width())
-                }),
-                desired_height,
-            )));
-            self.last_content_height = desired_height;
-        }
         context.request_repaint_after(Duration::from_millis(500));
+    }
+}
+
+fn load_cooler_texture(context: &egui::Context) -> Option<egui::TextureHandle> {
+    let image = image::load_from_memory(include_bytes!("../assets/ak620-cooler-green.png"))
+        .ok()?
+        .to_rgba8();
+    let width = usize::try_from(image.width()).ok()?;
+    let height = usize::try_from(image.height()).ok()?;
+    let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], image.as_raw());
+    Some(context.load_texture("ak620-cooler", color_image, egui::TextureOptions::LINEAR))
+}
+
+fn navigation_logo(ui: &mut egui::Ui) {
+    ui.vertical_centered(|ui| {
+        let (response, painter) = ui.allocate_painter(egui::vec2(42.0, 30.0), egui::Sense::hover());
+        let center = response.rect.center();
+        painter.text(
+            egui::pos2(center.x - 3.0, center.y),
+            egui::Align2::CENTER_CENTER,
+            "DC",
+            egui::FontId::proportional(17.0),
+            ui.visuals().text_color(),
+        );
+        let accent = rgb(35, 166, 157);
+        painter.line_segment(
+            [
+                egui::pos2(center.x + 12.0, center.y - 7.0),
+                egui::pos2(center.x + 12.0, center.y + 7.0),
+            ],
+            egui::Stroke::new(2.5, accent),
+        );
+        painter.line_segment(
+            [
+                egui::pos2(center.x + 7.0, center.y),
+                egui::pos2(center.x + 17.0, center.y),
+            ],
+            egui::Stroke::new(2.5, accent),
+        );
+    });
+}
+
+fn navigation_button(ui: &mut egui::Ui, page: &mut Page, value: Page, label: &str) {
+    let selected = *page == value;
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), egui::Sense::click());
+    let accent = rgb(35, 166, 157);
+    if selected {
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(8),
+            accent.gamma_multiply(0.22),
+        );
+        ui.painter().rect_filled(
+            egui::Rect::from_min_max(
+                rect.left_top(),
+                egui::pos2(rect.left() + 3.0, rect.bottom()),
+            ),
+            egui::CornerRadius::same(2),
+            accent,
+        );
+    } else if response.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(8),
+            ui.visuals().widgets.hovered.bg_fill,
+        );
+    }
+    let color = if selected {
+        accent
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    paint_navigation_icon(ui.painter(), rect.center(), value, color);
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect.shrink(2.0),
+            egui::CornerRadius::same(7),
+            egui::Stroke::new(1.0, accent),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let clicked = response.clicked();
+    response.on_hover_text(label);
+    if clicked {
+        *page = value;
+    }
+}
+
+fn paint_navigation_icon(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    page: Page,
+    color: egui::Color32,
+) {
+    let stroke = egui::Stroke::new(1.8, color);
+    match page {
+        Page::Monitoring => {
+            painter.add(egui::Shape::line(
+                arc_points(center, 10.0, 155.0, 230.0, 24),
+                stroke,
+            ));
+            painter.line_segment([center, egui::pos2(center.x + 5.5, center.y - 5.0)], stroke);
+            painter.circle_filled(center, 1.8, color);
+        }
+        Page::System => {
+            let screen = egui::Rect::from_center_size(
+                egui::pos2(center.x, center.y - 2.0),
+                egui::vec2(20.0, 14.0),
+            );
+            painter.rect_stroke(
+                screen,
+                egui::CornerRadius::same(1),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(center.x, screen.bottom()),
+                    egui::pos2(center.x, center.y + 9.0),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(center.x - 5.0, center.y + 9.0),
+                    egui::pos2(center.x + 5.0, center.y + 9.0),
+                ],
+                stroke,
+            );
+        }
+        Page::Device => {
+            for offset in [-6.0, 6.0] {
+                let rect = egui::Rect::from_center_size(
+                    egui::pos2(center.x, center.y + offset),
+                    egui::vec2(20.0, 8.0),
+                );
+                painter.rect_stroke(
+                    rect,
+                    egui::CornerRadius::same(2),
+                    stroke,
+                    egui::StrokeKind::Inside,
+                );
+                painter.circle_filled(egui::pos2(rect.right() - 3.5, rect.center().y), 1.1, color);
+            }
+        }
+        Page::Settings => {
+            painter.circle_stroke(center, 5.0, stroke);
+            painter.circle_filled(center, 1.7, color);
+            for index in 0..8 {
+                let angle = index as f32 * std::f32::consts::TAU / 8.0;
+                let direction = egui::vec2(angle.cos(), angle.sin());
+                painter.line_segment(
+                    [center + direction * 7.0, center + direction * 10.0],
+                    stroke,
+                );
+            }
+        }
+    }
+}
+
+fn cpu_overview_card(ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+    hardware_overview_card(
+        ui,
+        "CPU",
+        &snapshot.cpu_name,
+        snapshot.has_metrics.then_some(snapshot.utilization_percent),
+        snapshot
+            .has_metrics
+            .then_some(cpu_temperature_celsius(snapshot)),
+        [
+            (
+                metric_with_unit(snapshot.has_metrics, snapshot.frequency_mhz, "MHz"),
+                language.text("CPU frequency"),
+            ),
+            (
+                if snapshot.has_metrics {
+                    format!(
+                        "{:.0} {}",
+                        snapshot.temperature_degrees,
+                        snapshot.temperature_unit.symbol()
+                    )
+                } else {
+                    "—".to_owned()
+                },
+                language.text("CPU temperature"),
+            ),
+            (
+                metric_with_unit(snapshot.has_metrics, snapshot.power_watts, "W"),
+                language.text("CPU package power"),
+            ),
+        ],
+        language,
+    );
+}
+
+fn gpu_overview_card(ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+    hardware_overview_card(
+        ui,
+        "GPU",
+        &snapshot.gpu_name,
+        Some(snapshot.gpu_utilization_percent),
+        Some(snapshot.gpu_temperature_celsius as f32),
+        [
+            (
+                format!("{} MHz", snapshot.gpu_frequency_mhz),
+                language.text("GPU frequency"),
+            ),
+            (
+                format!("{:.0} °C", snapshot.gpu_temperature_celsius),
+                language.text("GPU temperature"),
+            ),
+            (
+                format!(
+                    "{} / {}",
+                    format_compact_bytes(snapshot.gpu_memory_used_bytes),
+                    format_compact_bytes(snapshot.gpu_memory_total_bytes)
+                ),
+                language.text("Video memory"),
+            ),
+        ],
+        language,
+    );
+}
+
+fn hardware_overview_card(
+    ui: &mut egui::Ui,
+    title: &str,
+    subtitle: &str,
+    load_percent: Option<u8>,
+    temperature_celsius: Option<f32>,
+    details: [(String, &str); 3],
+    language: Language,
+) {
+    dashboard_card(ui, 250.0, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(title).size(19.0).strong());
+            if !subtitle.is_empty() {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(subtitle)
+                                .size(13.0)
+                                .color(ui.visuals().weak_text_color()),
+                        )
+                        .truncate(),
+                    )
+                    .on_hover_text(subtitle);
+                });
+            }
+        });
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            dual_gauge(ui, load_percent, temperature_celsius, language.text("Load"));
+            ui.add_space(4.0);
+            ui.vertical(|ui| {
+                ui.add_space(14.0);
+                for (value, label) in details {
+                    overview_metric(ui, value, label);
+                    ui.add_space(11.0);
+                }
+            });
+        });
+    });
+}
+
+fn dual_gauge(
+    ui: &mut egui::Ui,
+    load_percent: Option<u8>,
+    temperature_celsius: Option<f32>,
+    load_label: &str,
+) {
+    let (response, painter) = ui.allocate_painter(egui::vec2(190.0, 180.0), egui::Sense::hover());
+    let center = egui::pos2(response.rect.center().x, response.rect.top() + 88.0);
+    let start_degrees = 150.0;
+    let sweep_degrees = 240.0;
+    let track = ui.visuals().widgets.noninteractive.bg_stroke.color;
+    let accent = rgb(35, 166, 157);
+    let temperature_color = rgb(82, 194, 187);
+    painter.add(egui::Shape::line(
+        arc_points(center, 74.0, start_degrees, sweep_degrees, 48),
+        egui::Stroke::new(7.0, track),
+    ));
+    painter.add(egui::Shape::line(
+        arc_points(center, 61.0, start_degrees, sweep_degrees, 48),
+        egui::Stroke::new(4.0, track),
+    ));
+    if let Some(load) = load_percent {
+        painter.add(egui::Shape::line(
+            arc_points(
+                center,
+                74.0,
+                start_degrees,
+                sweep_degrees * gauge_fraction(f32::from(load), 100.0),
+                48,
+            ),
+            egui::Stroke::new(7.0, accent),
+        ));
+    }
+    if let Some(temperature) = temperature_celsius {
+        painter.add(egui::Shape::line(
+            arc_points(
+                center,
+                61.0,
+                start_degrees,
+                sweep_degrees * gauge_fraction(temperature, 120.0),
+                48,
+            ),
+            egui::Stroke::new(4.0, temperature_color),
+        ));
+    }
+    painter.text(
+        egui::pos2(center.x, center.y - 10.0),
+        egui::Align2::CENTER_CENTER,
+        load_label,
+        egui::FontId::proportional(13.0),
+        ui.visuals().weak_text_color(),
+    );
+    painter.text(
+        egui::pos2(center.x - 3.0, center.y + 22.0),
+        egui::Align2::CENTER_CENTER,
+        load_percent.map_or_else(|| "—".to_owned(), |value| value.to_string()),
+        egui::FontId::proportional(42.0),
+        ui.visuals().text_color(),
+    );
+    if load_percent.is_some() {
+        painter.text(
+            egui::pos2(center.x + 31.0, center.y + 30.0),
+            egui::Align2::CENTER_CENTER,
+            "%",
+            egui::FontId::proportional(14.0),
+            ui.visuals().text_color(),
+        );
+    }
+    painter.text(
+        egui::pos2(response.rect.left() + 13.0, response.rect.bottom() - 4.0),
+        egui::Align2::LEFT_BOTTOM,
+        "0 °C",
+        egui::FontId::proportional(11.0),
+        ui.visuals().weak_text_color(),
+    );
+    painter.text(
+        egui::pos2(response.rect.right() - 9.0, response.rect.bottom() - 4.0),
+        egui::Align2::RIGHT_BOTTOM,
+        "120 °C",
+        egui::FontId::proportional(11.0),
+        ui.visuals().weak_text_color(),
+    );
+}
+
+fn arc_points(
+    center: egui::Pos2,
+    radius: f32,
+    start_degrees: f32,
+    sweep_degrees: f32,
+    segments: usize,
+) -> Vec<egui::Pos2> {
+    let segment_count = segments.max(1);
+    (0..=segment_count)
+        .map(|index| {
+            let fraction = index as f32 / segment_count as f32;
+            let angle = (start_degrees + sweep_degrees * fraction).to_radians();
+            center + egui::vec2(angle.cos(), angle.sin()) * radius
+        })
+        .collect()
+}
+
+fn gauge_fraction(value: f32, maximum: f32) -> f32 {
+    if !value.is_finite() || maximum <= 0.0 {
+        return 0.0;
+    }
+    (value / maximum).clamp(0.0, 1.0)
+}
+
+fn cpu_temperature_celsius(snapshot: &DaemonSnapshot) -> f32 {
+    match snapshot.temperature_unit {
+        TemperatureChoice::Celsius => snapshot.temperature_degrees as f32,
+        TemperatureChoice::Fahrenheit => ((snapshot.temperature_degrees - 32.0) / 1.8) as f32,
+    }
+}
+
+fn overview_metric(ui: &mut egui::Ui, value: String, label: &str) {
+    ui.label(
+        egui::RichText::new(value)
+            .size(18.0)
+            .strong()
+            .color(rgb(35, 166, 157)),
+    );
+    ui.label(
+        egui::RichText::new(label)
+            .size(12.0)
+            .color(ui.visuals().weak_text_color()),
+    );
+}
+
+fn memory_overview_card(ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+    dashboard_card(ui, 225.0, |ui| {
+        dashboard_card_title(ui, language.text("Memory"));
+        ui.add_space(24.0);
+        let percentage = percent(snapshot.memory_used_bytes, snapshot.memory_total_bytes);
+        ui.label(
+            egui::RichText::new(format!("{percentage}%"))
+                .size(34.0)
+                .strong(),
+        );
+        ui.weak(language.text("Usage"));
+        ui.add_space(12.0);
+        usage_bar(
+            ui,
+            snapshot.memory_used_bytes,
+            snapshot.memory_total_bytes,
+            format!(
+                "{} / {}",
+                format_compact_bytes(snapshot.memory_used_bytes),
+                format_compact_bytes(snapshot.memory_total_bytes)
+            ),
+        );
+    });
+}
+
+fn storage_overview_card(ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+    dashboard_card(ui, 225.0, |ui| {
+        dashboard_card_title(ui, language.text("Storage"));
+        ui.horizontal_wrapped(|ui| {
+            io_rate(
+                ui,
+                language.text("Read"),
+                snapshot.storage_read_bytes_per_second,
+            );
+            ui.separator();
+            io_rate(
+                ui,
+                language.text("Write"),
+                snapshot.storage_write_bytes_per_second,
+            );
+        });
+        ui.add_space(10.0);
+        egui::ScrollArea::vertical()
+            .id_salt("storage-volumes")
+            .max_height(138.0)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for (index, label) in snapshot.storage_labels.iter().enumerate() {
+                    let Some(used) = snapshot.storage_used_bytes.get(index) else {
+                        continue;
+                    };
+                    let Some(total) = snapshot.storage_total_bytes.get(index) else {
+                        continue;
+                    };
+                    ui.strong(label);
+                    usage_bar(
+                        ui,
+                        *used,
+                        *total,
+                        format!(
+                            "{} / {}",
+                            format_compact_bytes(*used),
+                            format_compact_bytes(*total)
+                        ),
+                    );
+                    ui.add_space(5.0);
+                }
+            });
+    });
+}
+
+fn network_overview_card(ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+    dashboard_card(ui, 225.0, |ui| {
+        dashboard_card_title(ui, language.text("Network"));
+        ui.add_space(24.0);
+        network_rate(
+            ui,
+            false,
+            language.text("Download"),
+            snapshot.network_receive_bytes_per_second,
+        );
+        ui.add_space(18.0);
+        network_rate(
+            ui,
+            true,
+            language.text("Upload"),
+            snapshot.network_transmit_bytes_per_second,
+        );
+    });
+}
+
+fn network_rate(ui: &mut egui::Ui, upward: bool, label: &str, bytes_per_second: u64) {
+    ui.horizontal(|ui| {
+        let (response, painter) = ui.allocate_painter(egui::vec2(28.0, 32.0), egui::Sense::hover());
+        let accent = rgb(35, 166, 157);
+        let center = response.rect.center();
+        let direction = if upward { -1.0 } else { 1.0 };
+        let tip = egui::pos2(center.x, center.y + direction * 8.0);
+        let tail = egui::pos2(center.x, center.y - direction * 8.0);
+        painter.line_segment([tail, tip], egui::Stroke::new(2.0, accent));
+        painter.line_segment(
+            [tip, egui::pos2(tip.x - 4.5, tip.y - direction * 4.5)],
+            egui::Stroke::new(2.0, accent),
+        );
+        painter.line_segment(
+            [tip, egui::pos2(tip.x + 4.5, tip.y - direction * 4.5)],
+            egui::Stroke::new(2.0, accent),
+        );
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new(format!("{}/s", format_bytes(bytes_per_second)))
+                    .size(18.0)
+                    .strong(),
+            );
+            ui.weak(label);
+        });
+    });
+}
+
+fn dashboard_card(
+    ui: &mut egui::Ui,
+    minimum_height: f32,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    egui::Frame::new()
+        .fill(ui.visuals().faint_bg_color)
+        .stroke(egui::Stroke::new(
+            1.0,
+            ui.visuals().widgets.noninteractive.bg_stroke.color,
+        ))
+        .corner_radius(egui::CornerRadius::same(8))
+        .inner_margin(egui::Margin::same(16))
+        .show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
+            ui.set_min_height(minimum_height);
+            add_contents(ui);
+        });
+}
+
+fn dashboard_card_title(ui: &mut egui::Ui, title: &str) {
+    ui.label(egui::RichText::new(title).size(18.0).strong());
+    ui.add_space(6.0);
+}
+
+fn percent(used: u64, total: u64) -> u64 {
+    if total == 0 {
+        return 0;
+    }
+    let rounded = (u128::from(used) * 100 + u128::from(total) / 2) / u128::from(total);
+    u64::try_from(rounded.min(100)).unwrap_or(100)
+}
+
+fn format_compact_bytes(bytes: u64) -> String {
+    format_bytes(bytes).replace(".0 ", " ")
+}
+
+fn page_heading(ui: &mut egui::Ui, title: &str) {
+    ui.heading(egui::RichText::new(title).size(28.0));
+}
+
+fn connection_badge(ui: &mut egui::Ui, snapshot: &DaemonSnapshot, language: Language) {
+    ui.horizontal_wrapped(|ui| {
+        let (color, text) = if snapshot.connected() {
+            (
+                egui::Color32::from_rgb(45, 205, 110),
+                language.text("Connected"),
+            )
+        } else {
+            (
+                egui::Color32::from_rgb(220, 85, 70),
+                language.text("Disconnected"),
+            )
+        };
+        let (response, painter) = ui.allocate_painter(egui::vec2(14.0, 14.0), egui::Sense::hover());
+        painter.circle_filled(response.rect.center(), 5.5, color);
+        ui.label(egui::RichText::new(text).strong().color(color));
+        if !snapshot.device_path.is_empty() {
+            ui.weak(&snapshot.device_path);
+        }
+    });
+}
+
+fn usage_bar(ui: &mut egui::Ui, used: u64, total: u64, text: String) {
+    if total == 0 {
+        return;
+    }
+    let fraction = (used as f64 / total as f64).clamp(0.0, 1.0) as f32;
+    ui.add(
+        egui::ProgressBar::new(fraction)
+            .show_percentage()
+            .fill(rgb(35, 166, 157))
+            .desired_height(28.0)
+            .text(text),
+    );
+}
+
+fn io_rate(ui: &mut egui::Ui, label: &str, bytes_per_second: u64) {
+    ui.weak(label);
+    ui.strong(format!("{}/s", format_bytes(bytes_per_second)));
+}
+
+fn info_row(ui: &mut egui::Ui, label: &str, value: &str) {
+    if value.is_empty() {
+        return;
+    }
+    ui.label(egui::RichText::new(label).strong());
+    ui.weak(value);
+    ui.add_space(8.0);
+}
+
+fn device_metric(ui: &mut egui::Ui, label: &str, value: String) {
+    ui.vertical(|ui| {
+        ui.label(egui::RichText::new(value).strong().size(20.0));
+        ui.weak(label);
+    });
+    ui.add_space(22.0);
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
     }
 }
 
@@ -541,52 +1258,6 @@ fn text_width(ui: &egui::Ui, text: &str, size: f32) -> f32 {
     })
 }
 
-fn metric_colors(dark: bool) -> [egui::Color32; 4] {
-    if dark {
-        [
-            rgb(255, 143, 99),
-            rgb(101, 183, 255),
-            rgb(75, 216, 136),
-            rgb(188, 144, 255),
-        ]
-    } else {
-        [
-            rgb(201, 75, 27),
-            rgb(31, 105, 180),
-            rgb(20, 130, 73),
-            rgb(116, 68, 176),
-        ]
-    }
-}
-
-fn responsive_metrics(ui: &mut egui::Ui, metrics: [(&str, String, egui::Color32); 4]) {
-    let [first, second, third, fourth] = metrics;
-    if ui.available_width() >= 360.0 {
-        metric_row(ui, first, second);
-        ui.add_space(8.0);
-        metric_row(ui, third, fourth);
-    } else {
-        for (index, (title, value, color)) in [first, second, third, fourth].into_iter().enumerate()
-        {
-            metric_card(ui, title, value, color);
-            if index != 3 {
-                ui.add_space(8.0);
-            }
-        }
-    }
-}
-
-fn metric_row(
-    ui: &mut egui::Ui,
-    left: (&str, String, egui::Color32),
-    right: (&str, String, egui::Color32),
-) {
-    ui.columns(2, |columns| {
-        metric_card(&mut columns[0], left.0, left.1, left.2);
-        metric_card(&mut columns[1], right.0, right.1, right.2);
-    });
-}
-
 fn section_card(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::group(ui.style())
         .fill(ui.visuals().faint_bg_color)
@@ -607,28 +1278,6 @@ fn section_card(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut e
             ui.label(egui::RichText::new(title).size(18.0).strong());
             ui.add_space(8.0);
             add_contents(ui);
-        });
-}
-
-fn metric_card(ui: &mut egui::Ui, title: &str, value: String, color: egui::Color32) {
-    egui::Frame::new()
-        .fill(ui.visuals().faint_bg_color)
-        .stroke(egui::Stroke::new(
-            1.0_f32,
-            ui.visuals().widgets.noninteractive.bg_stroke.color,
-        ))
-        .corner_radius(egui::CornerRadius::same(12))
-        .inner_margin(egui::Margin::symmetric(14, 7))
-        .show(ui, |ui| {
-            ui.set_min_width(ui.available_width());
-            ui.set_min_height(50.0);
-            ui.label(
-                egui::RichText::new(title)
-                    .color(ui.visuals().weak_text_color())
-                    .size(13.0),
-            );
-            ui.add_space(3.0);
-            ui.label(egui::RichText::new(value).size(28.0).strong().color(color));
         });
 }
 
@@ -799,8 +1448,8 @@ fn metric_with_unit(value_available: bool, value: impl std::fmt::Display, unit: 
 #[cfg(test)]
 mod tests {
     use super::{
-        INSTALLED_EXECUTABLE, format_time_with_offset, format_update_time, launch_executable,
-        metric_with_unit, should_launch_window,
+        INSTALLED_EXECUTABLE, format_time_with_offset, format_update_time, gauge_fraction,
+        launch_executable, metric_with_unit, percent, should_launch_window,
     };
     use crate::tray::WindowAction;
     use std::path::Path;
@@ -809,6 +1458,15 @@ mod tests {
     fn metric_placeholder_is_used_without_a_daemon_value() {
         assert_eq!(metric_with_unit(false, 42, "W"), "—");
         assert_eq!(metric_with_unit(true, 42, "W"), "42 W");
+    }
+    #[test]
+    fn dashboard_indicators_clamp_and_round_values() {
+        assert_eq!(gauge_fraction(-1.0, 100.0), 0.0);
+        assert_eq!(gauge_fraction(50.0, 100.0), 0.5);
+        assert_eq!(gauge_fraction(150.0, 100.0), 1.0);
+        assert_eq!(gauge_fraction(f32::NAN, 100.0), 0.0);
+        assert_eq!(percent(19, 64), 30);
+        assert_eq!(percent(1, 0), 0);
     }
     #[test]
     fn tray_launches_a_window_only_when_none_is_running() {

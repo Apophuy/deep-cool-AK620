@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use ak620_core::DisplayMetrics;
+use ak620_core::{DisplayMetrics, HostTelemetry};
 use zbus::{connection, fdo, interface};
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 
 /// Well-known name which also prevents two daemons owning the cooler.
 pub const BUS_NAME: &str = "io.github.ak620linux.Daemon";
-/// Stable object path for the version-one API.
+/// Stable object path for the version-two API.
 pub const OBJECT_PATH: &str = "/io/github/ak620linux/Daemon";
 
 /// Settings requests delivered from D-Bus to the hardware loop.
@@ -84,6 +84,8 @@ pub struct StatusSnapshot {
     pub last_error: Option<String>,
     /// Last successfully displayed metric values.
     pub metrics: Option<MetricStatus>,
+    /// Latest best-effort host telemetry, independent of HID display updates.
+    pub telemetry: Option<HostTelemetry>,
     /// Unix timestamp of the last successful display update.
     pub last_update_unix_seconds: u64,
     /// Settings currently applied by the hardware loop.
@@ -102,6 +104,7 @@ impl StatusStore {
             device_path: None,
             last_error: None,
             metrics: None,
+            telemetry: None,
             last_update_unix_seconds: 0,
             config,
         })))
@@ -167,6 +170,14 @@ impl StatusStore {
             .map_or(0, |elapsed| elapsed.as_secs());
     }
 
+    /// Replaces the best-effort host telemetry snapshot.
+    pub fn record_telemetry(&self, telemetry: HostTelemetry) {
+        self.0
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .telemetry = Some(telemetry);
+    }
+
     /// Records settings only after the hardware loop has applied and saved them.
     pub fn record_config(&self, config: Config) {
         self.0
@@ -192,7 +203,7 @@ impl SystemService {
     }
 }
 
-/// Starts the version-one service on the system bus for every local desktop user.
+/// Starts the version-two service on the system bus for every local desktop user.
 pub fn start_system_service(
     status: StatusStore,
     commands: mpsc::Sender<DaemonCommand>,
@@ -275,7 +286,7 @@ struct DaemonInterface {
 impl DaemonInterface {
     #[zbus(property)]
     fn api_version(&self) -> u32 {
-        1
+        2
     }
 
     #[zbus(property)]
@@ -331,6 +342,172 @@ impl DaemonInterface {
     }
 
     #[zbus(property)]
+    fn has_telemetry(&self) -> bool {
+        self.status.snapshot().telemetry.is_some()
+    }
+
+    #[zbus(property)]
+    fn host_name(&self) -> String {
+        self.telemetry()
+            .map_or_else(String::new, |value| value.host_name)
+    }
+
+    #[zbus(property)]
+    fn operating_system(&self) -> String {
+        self.telemetry()
+            .map_or_else(String::new, |value| value.operating_system)
+    }
+
+    #[zbus(property)]
+    fn cpu_name(&self) -> String {
+        self.telemetry()
+            .map_or_else(String::new, |value| value.cpu_name)
+    }
+
+    #[zbus(property)]
+    fn gpu_name(&self) -> String {
+        self.telemetry()
+            .map_or_else(String::new, |value| value.gpu_name)
+    }
+
+    #[zbus(property)]
+    fn motherboard_name(&self) -> String {
+        self.telemetry()
+            .map_or_else(String::new, |value| value.motherboard_name)
+    }
+
+    #[zbus(property)]
+    fn memory_description(&self) -> String {
+        self.telemetry()
+            .map_or_else(String::new, |value| value.memory_description)
+    }
+
+    #[zbus(property)]
+    fn drive_models(&self) -> Vec<String> {
+        self.telemetry()
+            .map_or_else(Vec::new, |value| value.drive_models)
+    }
+
+    #[zbus(property)]
+    fn has_gpu_metrics(&self) -> bool {
+        self.telemetry().and_then(|value| value.gpu).is_some()
+    }
+
+    #[zbus(property)]
+    fn gpu_utilization_percent(&self) -> u8 {
+        self.telemetry()
+            .and_then(|value| value.gpu)
+            .map_or(0, |gpu| gpu.utilization_percent)
+    }
+
+    #[zbus(property)]
+    fn gpu_frequency_mhz(&self) -> u32 {
+        self.telemetry()
+            .and_then(|value| value.gpu)
+            .map_or(0, |gpu| gpu.frequency_mhz)
+    }
+
+    #[zbus(property)]
+    fn gpu_temperature_celsius(&self) -> f64 {
+        self.telemetry()
+            .and_then(|value| value.gpu)
+            .map_or(0.0, |gpu| gpu.temperature_celsius)
+    }
+
+    #[zbus(property)]
+    fn gpu_memory_used_bytes(&self) -> u64 {
+        self.telemetry()
+            .and_then(|value| value.gpu)
+            .map_or(0, |gpu| gpu.memory_used_bytes)
+    }
+
+    #[zbus(property)]
+    fn gpu_memory_total_bytes(&self) -> u64 {
+        self.telemetry()
+            .and_then(|value| value.gpu)
+            .map_or(0, |gpu| gpu.memory_total_bytes)
+    }
+
+    #[zbus(property)]
+    fn memory_used_bytes(&self) -> u64 {
+        self.telemetry().map_or(0, |value| value.memory_used_bytes)
+    }
+
+    #[zbus(property)]
+    fn memory_total_bytes(&self) -> u64 {
+        self.telemetry().map_or(0, |value| value.memory_total_bytes)
+    }
+
+    #[zbus(property)]
+    fn storage_labels(&self) -> Vec<String> {
+        self.telemetry().map_or_else(Vec::new, |value| {
+            value
+                .storage_volumes
+                .into_iter()
+                .map(|volume| volume.label)
+                .collect()
+        })
+    }
+
+    #[zbus(property)]
+    fn storage_used_bytes(&self) -> Vec<u64> {
+        self.telemetry().map_or_else(Vec::new, |value| {
+            value
+                .storage_volumes
+                .into_iter()
+                .map(|volume| volume.used_bytes)
+                .collect()
+        })
+    }
+
+    #[zbus(property)]
+    fn storage_total_bytes(&self) -> Vec<u64> {
+        self.telemetry().map_or_else(Vec::new, |value| {
+            value
+                .storage_volumes
+                .into_iter()
+                .map(|volume| volume.total_bytes)
+                .collect()
+        })
+    }
+
+    #[zbus(property)]
+    fn storage_read_bytes_per_second(&self) -> u64 {
+        self.telemetry()
+            .map_or(0, |value| value.storage_read_bytes_per_second)
+    }
+
+    #[zbus(property)]
+    fn storage_write_bytes_per_second(&self) -> u64 {
+        self.telemetry()
+            .map_or(0, |value| value.storage_write_bytes_per_second)
+    }
+
+    #[zbus(property)]
+    fn network_receive_bytes_per_second(&self) -> u64 {
+        self.telemetry()
+            .map_or(0, |value| value.network_receive_bytes_per_second)
+    }
+
+    #[zbus(property)]
+    fn network_transmit_bytes_per_second(&self) -> u64 {
+        self.telemetry()
+            .map_or(0, |value| value.network_transmit_bytes_per_second)
+    }
+
+    #[zbus(property)]
+    fn has_fan_rpm(&self) -> bool {
+        self.telemetry().and_then(|value| value.fan_rpm).is_some()
+    }
+
+    #[zbus(property)]
+    fn fan_rpm(&self) -> u32 {
+        self.telemetry()
+            .and_then(|value| value.fan_rpm)
+            .unwrap_or_default()
+    }
+
+    #[zbus(property)]
     fn last_update_unix_seconds(&self) -> u64 {
         self.status.snapshot().last_update_unix_seconds
     }
@@ -373,6 +550,10 @@ impl DaemonInterface {
 }
 
 impl DaemonInterface {
+    fn telemetry(&self) -> Option<HostTelemetry> {
+        self.status.snapshot().telemetry
+    }
+
     fn send(&self, command: DaemonCommand) -> fdo::Result<()> {
         self.commands
             .send(command)

@@ -2,12 +2,14 @@
 
 mod metrics;
 mod protocol;
+mod telemetry;
 
 pub use metrics::{
     CpuFrequencyMhz, CpuUtilization, DisplayMetrics, MetricError, PowerWatts, Temperature,
     TemperatureUnit,
 };
 pub use protocol::{DisplayReport, REPORT_LENGTH};
+pub use telemetry::{GpuTelemetry, HostTelemetry, StorageVolume};
 
 /// DeepCool's USB vendor identifier for this device family.
 pub const USB_VENDOR_ID: u16 = 0x3633;

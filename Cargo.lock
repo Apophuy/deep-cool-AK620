@@ -48,11 +48,11 @@ dependencies = [
 
 [[package]]
 name = "ak620-core"
-version = "0.2.5"
+version = "0.3.1"
 
 [[package]]
 name = "ak620-gui"
-version = "0.2.5"
+version = "0.3.1"
 dependencies = [
  "eframe",
  "image",
@@ -65,10 +65,11 @@ dependencies = [
 
 [[package]]
 name = "ak620d"
-version = "0.2.5"
+version = "0.3.1"
 dependencies = [
  "ak620-core",
  "hidapi",
+ "rustix 1.1.4",
  "serde",
  "signal-hook",
  "tokio",

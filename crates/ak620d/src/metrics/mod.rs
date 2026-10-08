@@ -4,6 +4,7 @@ mod cpu;
 mod error;
 mod power;
 mod sampler;
+mod telemetry;
 mod temperature;
 
 pub use cpu::{CpuTimes, parse_cpu_times, parse_highest_frequency_mhz};
@@ -13,6 +14,7 @@ pub use power::{
     power_from_energy,
 };
 pub use sampler::LinuxMetricSampler;
+pub use telemetry::LinuxTelemetrySampler;
 pub use temperature::{
     TemperatureReading, TemperatureSensor, discover_temperature_sensor,
     discover_temperature_sensor_in,

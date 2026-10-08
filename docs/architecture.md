@@ -8,7 +8,7 @@ integration with a boot-started system service that does not run the hardware pr
 ## Process boundary
 
 ```text
-Linux hwmon / procfs / powercap
+Linux hwmon / DRM / procfs / sysfs / powercap
               |
               v
           ak620d  ------->  HID 3633:0012
@@ -23,6 +23,10 @@ Linux hwmon / procfs / powercap
 `ak620` system account. It samples metrics, validates and encodes a display
 report through `ak620-core`, writes at a bounded interval, and reconnects with bounded backoff.
 `ak620-control` is a session application; it never opens `/dev/hidraw*` directly.
+
+Best-effort desktop telemetry is sampled independently from the four HID display values. Missing
+GPU, storage, network, inventory, or fan channels never block a display update. The daemon omits
+unavailable optional values from its snapshot, and the client hides their sections and rows.
 
 ## Crate boundaries
 
@@ -45,6 +49,9 @@ which is incompatible with that MSRV-compatible library release. The client uses
 pure-Rust `image` crate decodes embedded PNG artwork into ARGB tray pixmaps and enables only its PNG
 codec, so it adds no Linux system dependency. D-Bus and tray work run on worker threads rather than
 the UI event loop.
+The daemon uses the safe `rustix` filesystem API already present in the dependency graph to read
+mounted-filesystem capacity; it adds no Linux runtime package and does not introduce `unsafe` in
+the workspace.
 
 ## Permissions
 
